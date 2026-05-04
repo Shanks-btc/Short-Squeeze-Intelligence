@@ -13,7 +13,7 @@ const {
 
 const app = express();
 app.use(express.json());
-app.use(createContextMiddleware());
+//app.use(createContextMiddleware());
 
 const OUTPUT_SCHEMA = {
   type: "object",
