@@ -1,0 +1,3 @@
+﻿require('dotenv').config();
+const axios = require('axios');
+axios.get('https://query1.finance.yahoo.com/v8/finance/chart/CVNA', {params:{interval:'1d',range:'30d'},timeout:10000,headers:{'User-Agent':'Mozilla/5.0'}}).then(r => {const meta = r.data.chart.result[0].meta;console.log('price:', meta.regularMarketPrice);console.log('sharesFloat:', meta.sharesFloat);}).catch(e => console.log('Error:', e.message));

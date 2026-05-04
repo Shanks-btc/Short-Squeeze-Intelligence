@@ -1,0 +1,3 @@
+﻿require('dotenv').config();
+const axios = require('axios');
+axios.get('https://stockanalysis.com/stocks/cvna/statistics/', {timeout:15000,headers:{'User-Agent':'Mozilla/5.0'}}).then(r => {const html = r.data;['averageVolume','price','regularMarketPrice','currentPrice'].forEach(k => {const idx = html.indexOf(k);if(idx>0) console.log(k+':', html.substring(idx, idx+80));else console.log(k+': NOT FOUND');});}).catch(e => console.log('Error:',e.message));

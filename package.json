@@ -1,0 +1,26 @@
+{
+  "name": "short-squeeze-intelligence",
+  "version": "1.0.0",
+  "description": "Short squeeze risk intelligence MCP server for CTX Protocol marketplace",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "keywords": [
+    "short-squeeze",
+    "finra",
+    "mcp",
+    "ctxprotocol"
+  ],
+  "author": "OdeyKelvin",
+  "license": "ISC",
+  "dependencies": {
+    "@ctxprotocol/sdk": "^0.13.1",
+    "axios": "^1.15.2",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "redis": "^5.12.1"
+  }
+}
