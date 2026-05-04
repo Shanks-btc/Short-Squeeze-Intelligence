@@ -2,37 +2,58 @@ const axios = require("axios");
 const { createClient } = require("redis");
 
 let redisClient = null;
+let redisConnected = false;
 
-async function getRedis() {
-  if (!redisClient) {
+// Initialize Redis in background - never block requests
+async function initRedis() {
+  try {
     redisClient = createClient({
       url: process.env.REDIS_URL,
       socket: {
-        connectTimeout: 5000,
+        connectTimeout: 3000,
         reconnectStrategy: (retries) => {
-          if (retries > 3) return false;
-          return Math.min(retries * 500, 2000);
+          if (retries > 2) {
+            redisConnected = false;
+            return false;
+          }
+          return 1000;
         }
       }
     });
-    redisClient.on("error", (err) => console.log("Redis error:", err.message));
+    redisClient.on("error", () => { redisConnected = false; });
+    redisClient.on("connect", () => { redisConnected = true; });
     await redisClient.connect();
+    redisConnected = true;
+  } catch (e) {
+    redisConnected = false;
   }
-  return redisClient;
+}
+
+// Start Redis connection in background on module load
+initRedis();
+
+async function cacheGet(key) {
+  if (!redisConnected || !redisClient) return null;
+  try {
+    const val = await redisClient.get(key);
+    return val ? JSON.parse(val) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function cacheSet(key, value, ttl) {
+  if (!redisConnected || !redisClient) return;
+  try {
+    await redisClient.setEx(key, ttl, JSON.stringify(value));
+  } catch (e) {}
 }
 
 async function getStockData(ticker) {
   const cacheKey = `yahoo_${ticker}`;
-  const TTL = 3600;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
 
-  // Try cache first
-  try {
-    const redis = await getRedis();
-    const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-  } catch (e) {}
-
-  // Fetch fresh data
   try {
     const response = await axios.get(
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`,
@@ -65,18 +86,10 @@ async function getStockData(ticker) {
       asOf: new Date().toISOString().split("T")[0]
     };
 
-    // Try to cache - never throw if it fails
-    try {
-      const redis = await getRedis();
-      await redis.setEx(cacheKey, TTL, JSON.stringify(data));
-    } catch (e) {
-      console.log("Redis cache write skipped:", e.message);
-    }
-
+    await cacheSet(cacheKey, data, 3600);
     return data;
 
   } catch (error) {
-    // Return partial data instead of throwing
     console.log("Yahoo Finance error:", error.message);
     return {
       ticker: ticker.toUpperCase(),
@@ -92,13 +105,8 @@ async function getStockData(ticker) {
 
 async function getShortDataFinviz(ticker) {
   const cacheKey = `finviz_${ticker}`;
-  const TTL = 43200;
-
-  try {
-    const redis = await getRedis();
-    const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-  } catch (e) {}
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
 
   try {
     const response = await axios.get(
@@ -113,7 +121,6 @@ async function getShortDataFinviz(ticker) {
     );
 
     const html = response.data;
-
     const shortInterestMatch = html.match(/Short Interest[^0-9]*([0-9,.]+[MBK]?)/);
     const shortFloatMatch = html.match(/Short Float[^0-9]*([0-9.]+%)/);
     const shortRatioMatch = html.match(/Short Ratio[^0-9]*([0-9.]+)/);
@@ -138,11 +145,7 @@ async function getShortDataFinviz(ticker) {
       source: "Finviz"
     };
 
-    try {
-      const redis = await getRedis();
-      await redis.setEx(cacheKey, TTL, JSON.stringify(data));
-    } catch (e) {}
-
+    await cacheSet(cacheKey, data, 43200);
     return data;
 
   } catch (error) {
@@ -162,13 +165,8 @@ async function getShortDataFinviz(ticker) {
 
 async function getShortData(ticker) {
   const cacheKey = `shortdata_${ticker}`;
-  const TTL = 43200;
-
-  try {
-    const redis = await getRedis();
-    const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-  } catch (e) {}
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
 
   try {
     const response = await axios.get(
@@ -183,31 +181,18 @@ async function getShortData(ticker) {
     );
 
     const html = response.data;
-
-    // Fixed regex patterns - StockAnalysis uses unquoted keys
     const shortInterestMatch = html.match(/id:"shortInterest"[^}]*hover:"([^"]+)"/);
     const shortFloatMatch = html.match(/id:"shortFloat"[^}]*hover:"([^"]+)"/);
     const shortRatioMatch = html.match(/id:"shortRatio"[^}]*hover:"([^"]+)"/);
     const shortPriorMatch = html.match(/id:"shortPriorMonth"[^}]*hover:"([^"]+)"/);
     const floatMatch = html.match(/id:"float"[^}]*hover:"([^"]+)"/);
 
-    const shortInterest = shortInterestMatch
-      ? parseFloat(shortInterestMatch[1].replace(/,/g, ""))
-      : null;
-    const shortFloat = shortFloatMatch
-      ? parseFloat(shortFloatMatch[1].replace("%", ""))
-      : null;
-    const shortRatio = shortRatioMatch
-      ? parseFloat(shortRatioMatch[1])
-      : null;
-    const shortPrior = shortPriorMatch
-      ? parseFloat(shortPriorMatch[1].replace(/,/g, ""))
-      : null;
-    const floatShares = floatMatch
-      ? parseFloat(floatMatch[1].replace(/,/g, ""))
-      : null;
+    const shortInterest = shortInterestMatch ? parseFloat(shortInterestMatch[1].replace(/,/g, "")) : null;
+    const shortFloat = shortFloatMatch ? parseFloat(shortFloatMatch[1].replace("%", "")) : null;
+    const shortRatio = shortRatioMatch ? parseFloat(shortRatioMatch[1]) : null;
+    const shortPrior = shortPriorMatch ? parseFloat(shortPriorMatch[1].replace(/,/g, "")) : null;
+    const floatShares = floatMatch ? parseFloat(floatMatch[1].replace(/,/g, "")) : null;
 
-    // If StockAnalysis returned nulls fall back to Finviz
     if (!shortFloat && !shortRatio) {
       console.log(`StockAnalysis returned nulls for ${ticker} - falling back to Finviz`);
       return await getShortDataFinviz(ticker);
@@ -224,11 +209,7 @@ async function getShortData(ticker) {
       source: "StockAnalysis"
     };
 
-    try {
-      const redis = await getRedis();
-      await redis.setEx(cacheKey, TTL, JSON.stringify(data));
-    } catch (e) {}
-
+    await cacheSet(cacheKey, data, 43200);
     return data;
 
   } catch (error) {
