@@ -54,6 +54,7 @@ async function getStockData(ticker) {
   const cached = await cacheGet(cacheKey);
   if (cached) return cached;
 
+  // Try Yahoo Finance first
   try {
     const response = await axios.get(
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`,
@@ -90,16 +91,42 @@ async function getStockData(ticker) {
     return data;
 
   } catch (error) {
-    console.log("Yahoo Finance error:", error.message);
-    return {
-      ticker: ticker.toUpperCase(),
-      currentPrice: null,
-      avgVolume30d: null,
-      sharesFloat: null,
-      sharesOutstanding: null,
-      marketCap: null,
-      asOf: new Date().toISOString().split("T")[0]
-    };
+    console.log("Yahoo Finance error - trying Finnhub:", error.message);
+
+    // Fallback to Finnhub for price
+    try {
+      const finnhubKey = process.env.FINNHUB_API_KEY || "d7r0ij9r01qtpsm0ktb0d7r0ij9r01qtpsm0ktbg";
+      const response = await axios.get(
+        `https://finnhub.io/api/v1/quote?symbol=${ticker.toUpperCase()}&token=${finnhubKey}`,
+        { timeout: 10000 }
+      );
+
+      const quote = response.data;
+      const data = {
+        ticker: ticker.toUpperCase(),
+        currentPrice: quote.c || null,
+        avgVolume30d: null,
+        sharesFloat: null,
+        sharesOutstanding: null,
+        marketCap: null,
+        asOf: new Date().toISOString().split("T")[0]
+      };
+
+      await cacheSet(cacheKey, data, 3600);
+      return data;
+
+    } catch (finnhubError) {
+      console.log("Finnhub error:", finnhubError.message);
+      return {
+        ticker: ticker.toUpperCase(),
+        currentPrice: null,
+        avgVolume30d: null,
+        sharesFloat: null,
+        sharesOutstanding: null,
+        marketCap: null,
+        asOf: new Date().toISOString().split("T")[0]
+      };
+    }
   }
 }
 
