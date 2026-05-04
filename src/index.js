@@ -325,21 +325,26 @@ app.post("/mcp", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Short Squeeze Intelligence MCP Server running on port ${PORT}`);
-  // Pre-warm cache with top squeezed tickers
-  const warmTickers = [
-    "CVNA", "GME", "AMC", "MSTR", "BBBY", "RIVN", "LCID",
-    "SOFI", "PLTR", "NIO", "TLRY", "SNDL", "CLOV", "SPCE",
-    "RIDE", "WKHS", "NKLA", "GOEV", "BLNK", "CHPT", "HYLN",
-    "AGEN", "BFRI", "HIMS", "IDEX", "JMIA", "KPLT", "LMND",
-    "MVIS", "OPEN", "PTRA", "ROOT", "SMAR", "TPVG", "UPST",
-    "VUZI", "XELA", "XTLB", "ZNGA", "WISH", "PSFE", "MVST",
-    "ACTC", "PAYA", "VVPR", "FTIV", "GFAI", "BOXL", "EARS", "EVFM"
-  ];
-  warmTickers.forEach(ticker => {
-    getSqueezeData(ticker)
-      .then(() => console.log(`Cache warmed: ${ticker}`))
-      .catch(err => console.log(`Cache warm failed ${ticker}:`, err.message));
-  });
+  // Pre-warm cache in background - non-blocking
+  setTimeout(() => {
+    const warmTickers = [
+      "CVNA", "GME", "AMC", "MSTR", "BBBY", "RIVN", "LCID",
+      "SOFI", "PLTR", "NIO", "TLRY", "SNDL", "CLOV", "SPCE",
+      "RIDE", "WKHS", "NKLA", "GOEV", "BLNK", "CHPT", "HYLN",
+      "AGEN", "BFRI", "HIMS", "IDEX", "JMIA", "KPLT", "LMND",
+      "MVIS", "OPEN", "PTRA", "ROOT", "SMAR", "TPVG", "UPST",
+      "VUZI", "XELA", "XTLB", "ZNGA", "WISH", "PSFE", "MVST",
+      "ACTC", "PAYA", "VVPR", "FTIV", "GFAI", "BOXL", "EARS", "EVFM"
+    ];
+    // Warm one ticker every 10 seconds to avoid rate limiting
+    warmTickers.forEach((ticker, index) => {
+      setTimeout(() => {
+        getSqueezeData(ticker)
+          .then(() => console.log(`Cache warmed: ${ticker}`))
+          .catch(err => console.log(`Cache warm failed ${ticker}:`, err.message));
+      }, index * 10000);
+    });
+  }, 5000); // Wait 5 seconds after startup before warming
 });
 
 module.exports = app;
