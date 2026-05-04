@@ -5,7 +5,16 @@ let redisClient = null;
 
 async function getRedis() {
   if (!redisClient) {
-    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient = createClient({
+      url: process.env.REDIS_URL,
+      socket: {
+        connectTimeout: 5000,
+        reconnectStrategy: (retries) => {
+          if (retries > 3) return false;
+          return Math.min(retries * 500, 2000);
+        }
+      }
+    });
     redisClient.on("error", (err) => console.log("Redis error:", err.message));
     await redisClient.connect();
   }
@@ -23,23 +32,22 @@ async function getShortInterest(ticker) {
   } catch (e) {}
 
   try {
-    const response = await axios.get(
+    const response = await axios.post(
       "https://api.finra.org/data/group/otcmarket/name/consolidatedShortInterest",
       {
-        params: {
-          limit: 5,
-          compareFilters: JSON.stringify([{
-            fieldName: "symbolCode",
-            fieldValue: ticker.toUpperCase(),
-            compareType: "equal"
-          }]),
-          sortFields: JSON.stringify([{
-            fieldName: "settlementDate",
-            sortType: "desc"
-          }])
-        },
+        limit: 3,
+        compareFilters: [{
+          fieldName: "symbolCode",
+          fieldValue: ticker.toUpperCase(),
+          compareType: "equal"
+        }]
+      },
+      {
         timeout: 10000,
-        headers: { Accept: "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        }
       }
     );
 
