@@ -5,7 +5,16 @@ let redisClient = null;
 
 async function getRedis() {
   if (!redisClient) {
-    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient = createClient({
+      url: process.env.REDIS_URL,
+      socket: {
+        connectTimeout: 5000,
+        reconnectStrategy: (retries) => {
+          if (retries > 3) return false;
+          return Math.min(retries * 500, 2000);
+        }
+      }
+    });
     redisClient.on("error", (err) => console.log("Redis error:", err.message));
     await redisClient.connect();
   }
