@@ -1,21 +1,17 @@
 const axios = require("axios");
-const { createClient } = require("redis");
 
 let redisClient = null;
 let redisConnected = false;
 
-// Initialize Redis in background - never block requests
 async function initRedis() {
   try {
+    const { createClient } = require("redis");
     redisClient = createClient({
       url: process.env.REDIS_URL,
       socket: {
         connectTimeout: 3000,
         reconnectStrategy: (retries) => {
-          if (retries > 2) {
-            redisConnected = false;
-            return false;
-          }
+          if (retries > 2) { redisConnected = false; return false; }
           return 1000;
         }
       }
@@ -29,7 +25,6 @@ async function initRedis() {
   }
 }
 
-// Start Redis connection in background on module load
 initRedis();
 
 async function cacheGet(key) {
@@ -37,9 +32,7 @@ async function cacheGet(key) {
   try {
     const val = await redisClient.get(key);
     return val ? JSON.parse(val) : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 async function cacheSet(key, value, ttl) {
@@ -86,22 +79,34 @@ async function getThresholdList(ticker) {
   if (cached !== null) return cached;
 
   try {
-    const response = await axios.get(
+    // Use POST with body for proper ticker filtering
+    const response = await axios.post(
       "https://api.finra.org/data/group/OTCMarket/name/thresholdList",
       {
-        params: {
-          limit: 10,
-          compareFilters: JSON.stringify([{
-            fieldName: "issueSymbolIdentifier",
-            fieldValue: ticker.toUpperCase(),
-            compareType: "equal"
-          }])
-        },
+        limit: 10,
+        compareFilters: [{
+          fieldName: "issueSymbolIdentifier",
+          fieldValue: ticker.toUpperCase(),
+          compareType: "equal"
+        }]
+      },
+      {
         timeout: 10000,
-        headers: { Accept: "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        }
       }
     );
-    const onList = response.data && response.data.length > 0;
+
+    // Only true if response has records matching this specific ticker
+    const records = response.data;
+    const onList = Array.isArray(records) && records.length > 0 &&
+      records.some(r =>
+        r.issueSymbolIdentifier?.toUpperCase() === ticker.toUpperCase() ||
+        r.symbolCode?.toUpperCase() === ticker.toUpperCase()
+      );
+
     await cacheSet(cacheKey, onList, 43200);
     return onList;
   } catch (error) {
@@ -115,23 +120,35 @@ async function getDailyShortVolume(ticker) {
   if (cached) return cached;
 
   try {
-    const response = await axios.get(
+    // Use POST with body for proper ticker filtering
+    const response = await axios.post(
       "https://api.finra.org/data/group/OTCMarket/name/regShoDaily",
       {
-        params: {
-          limit: 10,
-          compareFilters: JSON.stringify([{
-            fieldName: "securitiesInformationProcessorSymbolIdentifier",
-            fieldValue: ticker.toUpperCase(),
-            compareType: "equal"
-          }])
-        },
+        limit: 5,
+        compareFilters: [{
+          fieldName: "securitiesInformationProcessorSymbolIdentifier",
+          fieldValue: ticker.toUpperCase(),
+          compareType: "equal"
+        }]
+      },
+      {
         timeout: 10000,
-        headers: { Accept: "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        }
       }
     );
-    await cacheSet(cacheKey, response.data, 3600);
-    return response.data;
+
+    // Verify records match our ticker
+    const records = Array.isArray(response.data)
+      ? response.data.filter(r =>
+          r.securitiesInformationProcessorSymbolIdentifier?.toUpperCase() === ticker.toUpperCase()
+        )
+      : [];
+
+    await cacheSet(cacheKey, records, 3600);
+    return records;
   } catch (error) {
     return [];
   }
