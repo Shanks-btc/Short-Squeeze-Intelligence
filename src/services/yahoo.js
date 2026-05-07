@@ -95,7 +95,7 @@ async function getStockData(ticker) {
 
     // Fallback to Finnhub for price
     try {
-      const finnhubKey = process.env.FINNHUB_API_KEY || "d7r0ij9r01qtpsm0ktb0d7r0ij9r01qtpsm0ktbg";
+      const finnhubKey = process.env.FINNHUB_API_KEY;
       const response = await axios.get(
         `https://finnhub.io/api/v1/quote?symbol=${ticker.toUpperCase()}&token=${finnhubKey}`,
         { timeout: 10000 }
