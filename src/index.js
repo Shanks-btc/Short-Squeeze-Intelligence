@@ -13,7 +13,7 @@ const {
 
 const app = express();
 app.use(express.json());
-app.use(createContextMiddleware());
+// app.use(createContextMiddleware()); // disabled for Lepton hackathon - CTX auth not needed for Arc/Circle payment flow
 
 const OUTPUT_SCHEMA = {
   type: "object",
